@@ -29,19 +29,13 @@ from pedalboard import (
 # AUDIO
 # ============================================================
 
-INPUT = 12
-
-OUTPUTS = {
-    "c30": 16,
-    "pc": 20,
-    "tv": 21
-}
+INPUT = 11
+OUTPUT = 16
 
 SAMPLERATE = 16000
 BLOCKSIZE = 1024
 
 volume = 0.5
-current_output = "c30"
 
 # ============================================================
 # EFFECTS
@@ -361,7 +355,7 @@ def start_audio():
     stream = sd.Stream(
         device=(
             INPUT,
-            OUTPUTS[current_output]
+            OUTPUT
         ),
         samplerate=SAMPLERATE,
         channels=1,
@@ -387,6 +381,52 @@ def clear_audio_fifo():
         )
 
 # ============================================================
+# DEVICE MENU
+# ============================================================
+
+def show_audio_devices():
+    """Stampa gli ingressi e le uscite audio disponibili su richiesta."""
+    try:
+        devices = sd.query_devices()
+    except sd.PortAudioError as error:
+        print("Impossibile leggere i dispositivi audio:", error)
+        return
+
+    print()
+    print("DISPOSITIVI AUDIO DISPONIBILI")
+    print("Input:")
+
+    input_count = 0
+    output_count = 0
+
+    for index, device in enumerate(devices):
+        name = device["name"]
+        max_input_channels = device["max_input_channels"]
+        max_output_channels = device["max_output_channels"]
+
+        if max_input_channels > 0:
+            print(f"  [{index}] {name} (canali: {max_input_channels})")
+            input_count += 1
+
+    if input_count == 0:
+        print("  Nessun input disponibile.")
+
+    print("Output:")
+
+    for index, device in enumerate(devices):
+        name = device["name"]
+        max_output_channels = device["max_output_channels"]
+
+        if max_output_channels > 0:
+            print(f"  [{index}] {name} (canali: {max_output_channels})")
+            output_count += 1
+
+    if output_count == 0:
+        print("  Nessun output disponibile.")
+
+    print()
+
+# ============================================================
 # INITIALIZE
 # ============================================================
 
@@ -400,7 +440,7 @@ print("Sample rate:", SAMPLERATE)
 print("Block size:", BLOCKSIZE)
 print()
 
-print("Comandi disponibili:")
+print("Commands:")
 print("  vol 0.5")
 print("  gain 5")
 print("  gate -40")
@@ -420,9 +460,10 @@ print("  lowshelf 200 6 1")
 print("  highshelf 4000 6 1")
 print("  ladder 3000")
 print("  clean")
-print("  output c30")
-print("  output pc")
-print("  output tv")
+print("  devices      (mostra input e output disponibili)")
+print("  menu         (alias di devices)")
+print("  input 12     (indice input mostrato da devices)")
+print("  output 16    (indice output mostrato da devices)")
 print("  quit")
 print()
 
@@ -438,7 +479,10 @@ try:
         if not command:
             continue
 
-        if command[0] == "vol" and len(command) == 2:
+        if command[0] in ["devices", "menu"] and len(command) == 1:
+            show_audio_devices()
+
+        elif command[0] == "vol" and len(command) == 2:
             volume = float(command[1])
             print("Volume impostato a:", volume)
 
@@ -556,17 +600,39 @@ try:
             rebuild_board()
             print("Tutti gli effetti sono stati disattivati (Clean State)")
 
-        elif command[0] == "output" and len(command) == 2:
-            name = command[1]
-            if name in OUTPUTS:
-                stream.stop()
-                stream.close()
-                clear_audio_fifo()
-                current_output = name
-                start_audio()
-                print("Output reindirizzato su:", name)
+        elif command[0] == "input" and len(command) == 2:
+            try:
+                input_device = int(command[1])
+                device_info = sd.query_devices(input_device)
+            except (ValueError, sd.PortAudioError) as error:
+                print("Indice input non valido:", error)
             else:
-                print("Dispositivo Output sconosciuto:", name)
+                if device_info["max_input_channels"] < 1:
+                    print("Il dispositivo selezionato non è un input audio.")
+                else:
+                    stream.stop()
+                    stream.close()
+                    clear_audio_fifo()
+                    INPUT = input_device
+                    start_audio()
+                    print("Input reindirizzato su:", input_device, "-", device_info["name"])
+
+        elif command[0] == "output" and len(command) == 2:
+            try:
+                output_device = int(command[1])
+                device_info = sd.query_devices(output_device)
+            except (ValueError, sd.PortAudioError) as error:
+                print("Indice output non valido:", error)
+            else:
+                if device_info["max_output_channels"] < 1:
+                    print("Il dispositivo selezionato non è un output audio.")
+                else:
+                    stream.stop()
+                    stream.close()
+                    clear_audio_fifo()
+                    OUTPUT = output_device
+                    start_audio()
+                    print("Output reindirizzato su:", output_device, "-", device_info["name"])
 
         elif command[0] in ["quit", "exit"]:
             if stream:
